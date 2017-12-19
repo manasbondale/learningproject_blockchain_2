@@ -1,0 +1,13 @@
+void * malloc(size_t n); // n is the number of bytes/chars to be allocated
+
+char * buffer;
+buffer = (char *) malloc (N+1);
+for(int i=0; i<N; i++){
+*buffer = rand()%26 + 'a';
+}
+buffer[N]='\0';
+
+void * calloc(size_t n, size_t); //Similarly initializes a pointer to point to n memory blocks of n bytes each.
+
+int * a;
+a = (int *) calloc(N, sizeof(int));

@@ -346,3 +346,152 @@ Mainnet keys 80  5, K, L
 Testnet3 keys ef 9, c
 Mainnet addresses 1
 Testnet3 keys m, n
+
+Transactions
+UTXO : Unspent transaction outputs
+<txid, outputo> is called an outpoint
+all inputs must point to an outpoint in the global UTXO set : This is a way for miners to prevent double spending.
+
+Transaction validation
+
+A transaction output contains :
+The number of bitcoins to be spent/transferred & an output script
+
+A transaction input contains :
+An outpoint reference to the previous transaction outpoint & an input script
+
+Process of validating a transaction
+All transaction inputs must validate.
+1. Go find the transaction referenced by the outpoint
+2. Find the output in this transaction using index
+3. Get the output script
+4. Append the output script to the input script
+5. Execute the script on the Script interpreter
+6. If script runs successfully, the transaction has been validated
+
+Script is a small script language created for bitcoin. It has no loops. A Script script will eventually terminate.
+Script is stack based. There are no named variables.
+Example of script function to add 3 numbers and return sum:
+1. Push 1st num on to stack
+2. Push 2nd.
+3. Push 3rd.
+4. Sum, and push sum.
+5. Pop and output sum.
+6. Pop all contents of stack so that stack always returns to initial state after function ends.
+
+Some opcodes in Script and their hex value
+OP_0 00 //Also represents OP_FALSE
+OP_1 51 //Also represents OP_TRUE
+/../
+OP_16 60
+
+OP_PUSHDATA1 4c //For pushing 8-bit data
+OP_PUSHDATA2 4d //For 16-bit
+OP_PUSHDATA4 4e //For 32-bit
+
+Example :
+4c 03 23 43 45...
+First hex double digit 4c indicates OP_PUSHDATA1 and that data is in 8-bit format.
+03 indicates length of data.
+
+Special opcode encoding for pushing short data :
+01 - 4b opcodes indicate the number of 8-bit data values that follow is the value of the opcode itself
+
+Example:
+04 00 0e 5e 60
+Here 04 indicates 4 8-bit data values follow.
+
+OP_ADD 93 //Pops two numbers from stack. Adds, and pushes the sum
+OP_SUBTRACT 94 //Pops two number from stack and subtracts the first popped number from the second popped number. Pushes difference to stack
+
+Example: 3 4 93 5 94
+3    //3
+3 4  //4
+7    //93
+7 5  //5
+2    //94
+
+OP_EQUAL 87
+Pops two numbers and return OP_TRUE if equal otherwise OP_FALSE
+
+OP_DUP 76
+Duplicates the top of the stack and pushes it.
+
+OP_HASH160 a9
+Pops number. Performs Hash160 on it. Pushes digest. Used to calculate PSPKH addr from ECDSA public key
+OP_CHECKSIG ac
+Pops two numbers. First popped is ECDSA public key. Second popped is DER-encoded signature. Computes ECDSA_verify and returns OP_TRUE if the signature is valid for that public key.
+
+Standard script
+
+To validate an outpoint
+Validation script = Input Script + Unspent Output Script
+
+VS must be non-zero or true for script to be valid.
+
+Only standard scripts are allowed as scripts for IS and OS. Otherwise an OS script of OP_FALSE will always return invalid VS.
+
+Mainnet miners only accept Standard Scripts. A script is checked if it is standard by running IsStandard() which is a part of the bitcoin code.
+As of Bitcoin Core 0.10 only the following scripts are received as valid:
+1. P2PKH Pay to public key hash
+2. P2SH Pay to script hash
+3. P2PK Pay to public key
+4. Multisignatures
+5. OP_RETURN metacode
+
+Testnet3 miners skip IsStandard().
+
+P2PKH output script
+OP_DUP
+OP_HASH160
+hash160(public_key)
+OP_EQUALVERIFY
+OP_CHECKSIG
+
+In opcode :
+76 (OP_DUP)
+a9 (OP_HASH160)
+
+14 6b f1 9e 55 f9 4d 98  //here 14 indicates that 14 bytes follow
+6b 46 40 c1 54 d8 64 69
+93 41 91 95 11
+
+88 (OP_EQUALVERIFY)
+ac (OP_CHECKSIG)
+
+P2PKH Input script
+This contains a DER-encoded 70 byte signature followed by a 33 byte public key.
+There are no other opcodes other than data pushes
+Example :
+47 30 44 02 20 2b 2b 52 //47 indicates 70 bytes follow (hex to dec)
+9b db dc 93 e7 8a f7 e0
+02 28 b1 79 91 8b 03 2d
+76 90 2f 74 ef 45 44 26
+f7 d0 6c d0 f9 02 20 62
+dd c7 64 51 cd 04 cb 56
+7c a5 c5 e0 47 e8 ac 41
+d3 d4 cf 7c b9 24 34 d5
+5c b4 86 cc cf 6a f2 01
+
+21 02 82 00 6e 93 98 a6 //21 indicates 33 bytes follow
+98 6e da 61 fe 91 67 4c
+3a 10 8c 39 94 75 bf 1e
+73 8f 19 df c2 db 11 db
+1d 28
+
+Therefore, P2PKH Validation script becomes :
+signature
+public key
+OP_DUP
+OP_HASH160
+hash160(public_key)
+OP_EQUALVERIFY
+OP_CHECKSIG
+
+1. Signature is pushed. Public key is pushed.
+2. Pub key is duplicated.
+3. Pub key duplicate is hash160'd
+4. Output public key's hash160 is pushed.
+5. Input and output public keys are verified for equality and popped
+6. Signature is checked against public key
+7. Lastly in 6 OP_CHECKSIG returns OP_TRUE if successful.
