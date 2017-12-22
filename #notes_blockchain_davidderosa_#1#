@@ -605,3 +605,45 @@ ac
 
 bbp_txout_create_p2pkh(&outs[1], 61900000,
         "6bf19e55f94d986b4640c154d864699341919511"); //notice &outs[1]
+
+Building the signature subject
+1. Generating ECDSA keypair
+2. Creating message
+3. Signing message with private key to produce signature
+
+Modified version of a transaction
+I script is set to output script of the UTXO it refers to
+All other input scripts are truncated to zero-length
+A SIGHASH flag is appended
+
+bbp_outpoint_fill(&outpoint,
+        "f34e1c37e736727770fed85d1b129713ef7f300304498c31c833985f487fa2f3", 0);
+bbp_txout_create_p2pkh(&prev_outs[0], 87000000,
+        "6bf19e55f94d986b4640c154d864699341919511");
+bbp_txin_create_signable(&ins_sign[0], &outpoint, &prev_outs[0]);
+
+tx.version = bbp_eint32(BBP_LITTLE, 1);
+tx.outputs_len = 2;
+tx.outputs = outs;
+tx.inputs_len = 1;
+tx.inputs = ins_sign;
+tx.locktime = 0;
+msg_len = bbp_tx_size(&tx, BBP_SIGHASH_ALL);
+msg = malloc(msg_len);
+bbp_tx_serialize(&tx, msg, BBP_SIGHASH_ALL);
+
+bbp_tx_size and bbp_tx_serialize size and serialize transaction data to raw bytes
+bbp_outpoint_fill fills a bbp_outpoint_t structure
+bbp_txin_create_signable creates a fake input for our message by copying the corresponding UTXO script
+
+Signing all inputs : set the flag to SIGHASH_ALL (01)
+
+Final message :
+version(32-bit)
+number of inputs (varint)
+input UTXO txid (hash256, little_endian)
+input UTXO index (32-bit)
+input UTXO script (varint + data)
+input sequence
+output value (64-bits)
+output script (varint + data)
