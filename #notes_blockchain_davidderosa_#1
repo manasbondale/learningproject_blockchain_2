@@ -1,6 +1,8 @@
 a hash is stored as
 unsigned char txid[] = {0xAA, ....., 0xEE} // in little endien style which means that AA is the LSB and EE is the MSB
 
+Serialization
+
 Fixed data hash
 
 char message[]= "hello world";
@@ -49,7 +51,7 @@ memset(ser+4+str_real_len, '\0', str_pad_len); //'\0' is equivalent to the byte 
 }
 *(uint16_t *)(ser+4+str_len) = bbp_eint16(BBP_LITTLE, n16);
 
-above code creates a fixed length string data of 16 bytes (4 +10+2)
+above code creates a fixed length string data of 16 bytes (4+10+2)
 
 typedef enum{
 BBP_VARINT16 = 0xfd; //precedes data of 16 bits
@@ -723,3 +725,154 @@ f5 e0 54 b2 c6 ca c5 d6
 3a 10 8c 39 94 75 bf 1e
 73 8f 19 df c2 db 11 db
 1d 28
+
+Packing the transaction
+Flag parameter is set to 00 to pack a signed transaction
+
+version 32-bit
+01 00 00 00
+number of inputs
+01
+UTXO txid hash256, little_endian
+f3 a2 7f 48 5f 98 33 c8
+31 8c 49 04 03 30 7f ef
+13 97 12 1b 5d d8 fe 70
+77 72 36 e7 37 1c 4e f3
+UTXO index 32-bit
+00 00 00 00
+UTXO input script
+6a 47 30 44 02 20 11 1a //64 indicates length
+48 2a ba 6a fb a1 2a 6f
+27 de 76 7d d4 d0 64 17
+de f6 65 bd 10 0b c6 8c
+42 84 5c 75 2a 8f 02 20
+5e 86 f5 e0 54 b2 c6 ca
+c5 d6 63 66 4e 35 77 9f
+b0 34 38 7c 07 84 8b c7
+72 44 42 ca cf 65 93 24
+01 21 02 82 00 6e 93 98
+a6 98 6e da 61 fe 91 67
+4c 3a 10 8c 39 94 75 bf
+1e 73 8f 19 df c2 db 11
+db 1d 28
+UTXO sequence
+ff ff ff ff
+
+number of outputs
+02
+output value 64-bits
+e0 fe 7e 01 00 00 00 00
+output script varint + data
+19 76 a9 14 18 ba 14 b3
+68 22 95 cb 05 23 0e 31
+fe cb 00 08 92 40 66 08
+88 ac
+change output value 64-bits
+e0 84 b0 03 00 00 00 00
+change output script varint + data
+19 76 a9 14 6b f1 9e 55
+f9 4d 98 6b 46 40 c1 54
+d8 64 69 93 41 91 95 11
+88 ac
+locktime
+00 00 00 00
+
+Measures 225 bytes. The txid is created by hash256ing the above sequence (big-endian)
+99 96 e2 f6 4b 6a f0 23
+2d d9 c8 97 39 5c e5 1f
+dd 35 e6 35 9e dd 28 55
+c6 0f f8 23 d8 d6 57 d1
+
+Publishing to network: Use webservice like Blockr (Testnet) to publish a rawtx raw transaction to the p2p network
+
+Wallets
+Heavy wallets contain the entire blockchain
+Lightweight wallets only contain transaction in which the user is either a sender or a receiver
+
+A wallet contains : A WIF encoded private key, Base58check encoded public key P2PKH address
+A real wallet will contain multiple keypairs
+A bitcoin core is a heavy wallet while also the official mining software
+
+typical p2pkh out script :
+OP_DUP
+OP_HASH160
+hash160(public key)
+OP_EQUALVERIFY
+OP_CHECKSIG
+
+typical p2pkh input script
+[signature]
+[public key]
+
+Relevancy scan in pseudocode :
+outpoint = struct { txid, index };
+
+relevant_txs = {};  /* txid -> tx */
+utxos = {};         /* outpoint */
+balance = 0;
+
+for (tx in blockchain.txs) {
+
+    /* 1 */
+    for (txout in tx.outputs) {
+        if (!is_p2pkh_output(txout.script)) {
+            continue;
+        }
+        if (txout.script contains hash160(keypair.public_key)) {
+            relevant_txs.add(tx);
+
+            outpoint = outpoint(tx.id, txout.index);
+            utxos.add(outpoint);
+            balance += txout.value;
+        }
+    }
+
+    /* 2 */
+    for (txin in tx.inputs) {
+        if (!is_p2pkh_input(txin.script)) {
+            continue;
+        }
+        if (txin.script contains keypair.public_key) {
+            relevant_txs.add(tx);
+
+            outpoint = txin.outpoint;
+            previous_tx = relevant_txs[outpoint.txid];
+            prev_txout = previous_tx.outputs[outpoint.index];
+            utxos.remove(outpoint);
+            balance -= prev_txout.value;
+        }
+    }
+}
+
+The above loop goes through all blockchain transactions and collects all transactions that are relevant to the user.
+1. If the p2pkh output contains our public key's hash160 collect it. Store it as UTXO in wallet. Add it to the balance.
+2. If the p2pkh input contains our public key collect it. Remove the associated outpoints (UTXOs) and remove the balance.
+
+Computing the wallet balance from the UTXOs : pseudocode :
+balance = 0;
+
+for (outpoint in utxos) {
+    unspent_tx = relevant_txs[outpoint.txid];
+    unspent_txout = unspent_tx.outputs[outpoint.index];
+    balance += unspent_txout.value;
+}
+
+A wallet can be split into three modules :
+Signing, Public addresses module, Networking module
+Most wallets are monolithic (all modules in one)
+Some wallets have separate signing module. TREZOR has signing module on external USB
+
+Signing module simply signs unsigned transaction using the resident private key. Therefore, signing modules may be implemented in hardware.
+Public addresses modules are used often when a wallet handles multiple public addresses.
+
+Networking module :
+1 Connecting to the bitcoin p2p network
+2 synchronizing its blockchain
+3 monitoring relevant transactions
+4 publishing transactions
+
+Just a quickie on g++
+g++ -c main.cpp  //-c compile to object code
+g++ -c frac.cpp
+g++ -o frac main.o frac.o //link and create executable
+frac //execute
